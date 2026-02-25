@@ -43,8 +43,11 @@ source_entity = None
 target_entity = None
 
 async def verify_api_key(x_api_key: str = Header(None)):
-    """Verify API key for n8n requests (optional if no key set)"""
+    """Verify API key for n8n requests (with advanced debugging)"""
+    logger.info(f"🔑 DEBUG API KEY → Received: '{x_api_key}' | Expected: '{N8N_API_KEY}' | Match: {x_api_key == N8N_API_KEY}")
+    
     if N8N_API_KEY and x_api_key != N8N_API_KEY:
+        logger.warning("❌ API key mismatch!")
         raise HTTPException(status_code=401, detail="Invalid API key")
     return True
 
