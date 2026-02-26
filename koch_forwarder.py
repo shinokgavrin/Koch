@@ -9,7 +9,7 @@ import os
 from telethon import TelegramClient, events
 from telethon.sessions import StringSession
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from fastapi import FastAPI, HTTPException, Depends, Header
 import uvicorn
 from contextlib import asynccontextmanager
@@ -196,34 +196,49 @@ async def get_recent_messages(
         raise HTTPException(status_code=503, detail="Target channel not configured")
     
     try:
-        # Calculate time range
-        time_threshold = datetime.now() - timedelta(hours=hours)
+        # Calculate time range (FIXED: Timezone aware!)
+        time_threshold = datetime.now(timezone.utc) - timedelta(hours=hours)
         
-        # Fetch messages from target channel (where forwarded messages are stored)
+        # Fetch messages from target channel (FIXED: reverse=True, increased limit)
         messages = []
         async for message in telegram_client.iter_messages(
             target_channel_id, 
             offset_date=time_threshold,
-            reverse=False,  # Get newest first
-            limit=200  # Reasonable limit
+            reverse=True,  # Oldest to newest (within the time frame)
+            limit=500      # Increased limit safely
         ):
+            # Safety break just in case
+            if message.date < time_threshold:
+                break
+                
             if message.text and message.text.strip():
                 # Extract channel ID without the -100 prefix for the link
                 channel_id_for_link = str(abs(target_channel_id))[3:]  # Remove -100 prefix
                 message_link = f"https://t.me/c/{channel_id_for_link}/{message.id}"
 
-                # --- NEW: Get forwarded-from channel info ---
+                # --- FIXED & CLEANER: Get forwarded-from using Telethon's built-in methods ---
                 fwd_name = None
                 fwd_handle = None
                 fwd_id = None
+                
                 if message.forward:
-                    # Try to get channel entity (works for channels, not users)
-                    if hasattr(message.forward, "chat") and message.forward.chat:
-                        fwd_name = getattr(message.forward.chat, "title", None)
-                        fwd_handle = getattr(message.forward.chat, "username", None)
-                        fwd_id = getattr(message.forward.chat, "id", None)
-                    elif hasattr(message.forward, "sender_id"):
-                        fwd_id = message.forward.sender_id
+                    try:
+                        # Preferred & cleanest way
+                        fwd_entity = await message.forward.get_chat()
+                        fwd_name = getattr(fwd_entity, 'title', None)
+                        fwd_handle = getattr(fwd_entity, 'username', None)
+                        fwd_id = getattr(fwd_entity, 'id', None)
+                    except Exception:
+                        try:
+                            # Fallback for user forwards or edge cases
+                            fwd_entity = await message.forward.get_sender()
+                            fwd_name = getattr(fwd_entity, 'title', getattr(fwd_entity, 'first_name', None))
+                            fwd_handle = getattr(fwd_entity, 'username', None)
+                            fwd_id = getattr(fwd_entity, 'id', None)
+                        except Exception:
+                            # Final fallback for deleted accounts etc.
+                            if getattr(message.forward, 'from_name', None):
+                                fwd_name = message.forward.from_name
 
                 messages.append({
                     'message_id': message.id,
@@ -232,13 +247,12 @@ async def get_recent_messages(
                     'readable_date': message.date.isoformat(),
                     'link': message_link,
                     'text_with_link': message.text.strip() + f"\n🔗 Source: {message_link}",
-                    # --- NEW FIELDS ---
                     'forwarded_from_name': fwd_name,
                     'forwarded_from_handle': fwd_handle,
                     'forwarded_from_id': fwd_id
                 })
         
-        # Sort by date (newest first)
+        # Sort by date (newest first for API output)
         messages.sort(key=lambda x: x['date'], reverse=True)
         
         logger.info(f"📊 API: Retrieved {len(messages)} messages from last {hours} hours")
@@ -270,7 +284,6 @@ async def get_combined_messages(
         result = await get_recent_messages(hours, api_key_valid)
         
         # Create combined text for AI input
-        # INCLUDE forwarded-from info if available
         def format_message(msg):
             src = None
             if msg.get('forwarded_from_handle'):
