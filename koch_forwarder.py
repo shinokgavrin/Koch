@@ -31,7 +31,7 @@ SESSION_STRING = os.getenv('SESSION_STRING', '')
 
 # Channels
 SOURCE_CHANNEL = os.getenv('SOURCE_CHANNEL', 'AlfredKochBayern')
-TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', 'YourPrivateChannel')
+TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', 'Koch_Avatar')
 
 # API security for n8n (optional)
 N8N_API_KEY = os.getenv('N8N_API_KEY', '')
