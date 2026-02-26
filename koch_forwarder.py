@@ -30,7 +30,7 @@ PHONE_NUMBER = os.getenv('TELEGRAM_PHONE')
 SESSION_STRING = os.getenv('SESSION_STRING', '')
 
 # Channels
-SOURCE_CHANNEL = 'AlfredKochBayern'
+SOURCE_CHANNEL = os.getenv('SOURCE_CHANNEL', 'AlfredKochBayern')
 TARGET_CHANNEL = os.getenv('TARGET_CHANNEL', 'YourPrivateChannel')
 
 # API security for n8n (optional)
